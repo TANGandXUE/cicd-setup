@@ -19,7 +19,7 @@ import { execSync } from 'child_process';
 
 /**
  * 检查 NestJS 项目的 tsconfig 配置，确保编译输出正确
- * 检查两个问题：1) 缺少 rootDir  2) 根目录 .ts 文件未被排除
+ * 检查三个问题：1) 缺少 rootDir  2) 根目录 .ts 文件未被排除  3) tsBuildInfoFile 缺失导致缓存问题
  */
 async function checkTsConfigRootDir(outputDir: string, inquirer: any, projectType: string): Promise<void> {
   // 只检查后端项目
@@ -37,6 +37,18 @@ async function checkTsConfigRootDir(outputDir: string, inquirer: any, projectTyp
     if (!tsconfig.compilerOptions?.outDir) return;
 
     const needsRootDir = !tsconfig.compilerOptions?.rootDir;
+
+    // 检查 tsBuildInfoFile 问题
+    // 背景：TypeScript incremental 编译会生成 .tsbuildinfo 缓存文件
+    // 当同时设置 incremental: true 和 rootDir 时，.tsbuildinfo 会被放到项目根目录而不是 outDir
+    // 而 nest-cli.json 的 deleteOutDir: true 只会删除 dist 目录，不会删除根目录的 .tsbuildinfo
+    // 这导致：dist 被删除后，TypeScript 看到 .tsbuildinfo 认为"没有变化"，跳过编译，dist 为空
+    // 解决方案：显式设置 tsBuildInfoFile 到 dist 目录内，让 deleteOutDir 一起清理
+    // 参考：https://github.com/microsoft/TypeScript/issues/30925
+    const outDir = tsconfig.compilerOptions.outDir.replace(/^\.\//, '').replace(/\/$/, '');
+    const needsTsBuildInfoFile = tsconfig.compilerOptions?.incremental === true
+      && tsconfig.compilerOptions?.rootDir
+      && !tsconfig.compilerOptions?.tsBuildInfoFile;
 
     // 检查根目录是否有 .ts 文件（如 typeorm.config.ts）
     const rootTsFiles: string[] = [];
@@ -62,7 +74,7 @@ async function checkTsConfigRootDir(outputDir: string, inquirer: any, projectTyp
     const unexcludedFiles = rootTsFiles.filter(f => !excludeList.includes(f));
 
     // 如果都配置好了，直接返回
-    if (!needsRootDir && unexcludedFiles.length === 0) return;
+    if (!needsRootDir && unexcludedFiles.length === 0 && !needsTsBuildInfoFile) return;
 
     // 显示问题
     const issues: string[] = [];
@@ -71,6 +83,9 @@ async function checkTsConfigRootDir(outputDir: string, inquirer: any, projectTyp
     }
     if (unexcludedFiles.length > 0) {
       issues.push(`根目录 .ts 文件未排除: ${unexcludedFiles.join(', ')}`);
+    }
+    if (needsTsBuildInfoFile) {
+      issues.push('incremental 编译缓存位置问题（会导致 build 后 dist 目录为空）');
     }
 
     console.log(chalk.yellow('\n⚠️  检测到 tsconfig 配置问题:'));
@@ -120,6 +135,23 @@ async function checkTsConfigRootDir(outputDir: string, inquirer: any, projectTyp
           }
           writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2) + '\n', 'utf-8');
           console.log(chalk.green(`✓ 已将 ${unexcludedFiles.join(', ')} 添加到 tsconfig.json 的 exclude`));
+        }
+      }
+
+      // 3. 修复 tsBuildInfoFile
+      if (needsTsBuildInfoFile) {
+        tsconfig.compilerOptions.tsBuildInfoFile = `./${outDir}/.tsbuildinfo`;
+        writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2) + '\n', 'utf-8');
+        console.log(chalk.green(`✓ 已添加 tsBuildInfoFile: "./${outDir}/.tsbuildinfo" 到 tsconfig.json`));
+
+        // 检查并清理根目录的旧 .tsbuildinfo 文件
+        const oldTsBuildInfoFiles = require('fs').readdirSync(outputDir)
+          .filter((f: string) => f.endsWith('.tsbuildinfo'));
+        if (oldTsBuildInfoFiles.length > 0) {
+          for (const file of oldTsBuildInfoFiles) {
+            require('fs').unlinkSync(path.join(outputDir, file));
+          }
+          console.log(chalk.green(`✓ 已清理根目录的旧缓存文件: ${oldTsBuildInfoFiles.join(', ')}`));
         }
       }
 
