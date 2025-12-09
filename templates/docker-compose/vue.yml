@@ -1,0 +1,13 @@
+services:
+  {{APP_NAME}}:
+    image: ${DOCKER_IMAGE:-{{APP_NAME}}:latest}
+    container_name: {{APP_NAME}}
+    ports:
+      - "${APP_PORT}:80"  # 宿主机端口:容器内Nginx端口(固定80)
+    restart: unless-stopped
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

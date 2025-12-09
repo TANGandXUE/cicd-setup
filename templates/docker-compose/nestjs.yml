@@ -1,0 +1,17 @@
+services:
+  {{APP_NAME}}:
+    image: ${DOCKER_IMAGE:-{{APP_NAME}}:latest}
+    container_name: {{APP_NAME}}
+    ports:
+      - "${APP_PORT}:${APP_PORT}"
+    env_file:
+      - .env
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

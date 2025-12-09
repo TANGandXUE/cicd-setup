@@ -1,0 +1,50 @@
+{
+  "name": "clouddreamai-cicd-setup",
+  "version": "1.5.51",
+  "description": "CloudDreamAI GitLab CI/CD 自动配置工具 - 支持 NestJS/Vue/React 项目的一键 CI/CD 配置",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "cicd-setup": "./bin/cicd-setup.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/cli.ts",
+    "start": "node dist/cli.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "gitlab",
+    "cicd",
+    "devops",
+    "automation",
+    "nestjs",
+    "vue",
+    "react",
+    "docker"
+  ],
+  "author": "CloudDreamAI",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0",
+    "inquirer": "^8.2.6",
+    "ora": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/inquirer": "^8.2.10",
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "templates",
+    "README.md"
+  ]
+}
