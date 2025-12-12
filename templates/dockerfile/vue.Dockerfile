@@ -29,8 +29,8 @@ FROM nginx:alpine AS production
 # 复制构建产物到 Nginx 默认目录
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# 复制 Nginx 配置（如果有自定义配置）
-# COPY nginx.conf /etc/nginx/nginx.conf
+# 配置 Nginx 支持 SPA 路由（Vue Router history mode / React BrowserRouter）
+RUN echo 'server { listen 80; root /usr/share/nginx/html; index index.html; location / { try_files $uri $uri/ /index.html; } }' > /etc/nginx/conf.d/default.conf
 
 # 暴露端口
 EXPOSE 80
