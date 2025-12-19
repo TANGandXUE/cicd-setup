@@ -34,9 +34,17 @@ const COMMON_VARIABLES: VariableDefinition[] = [
     required: true,
   },
   {
-    key: 'SSH_PASSWORD',
-    description: '部署服务器的 SSH 密码',
+    key: 'DEV_SSH_PASSWORD',
+    description: '开发服务器的 SSH 密码',
     protected: false,
+    masked: true,
+    variable_type: 'env_var',
+    required: true,
+  },
+  {
+    key: 'PROD_SSH_PASSWORD',
+    description: '生产服务器的 SSH 密码',
+    protected: true,
     masked: true,
     variable_type: 'env_var',
     required: true,
@@ -122,14 +130,24 @@ export class VariableConfigurator {
 
     // GitLab Container Registry 使用 CI 预定义变量，无需额外配置
 
-    // SSH 密码（不设置 protected，确保所有分支都能访问）
+    // 开发环境 SSH 密码（不设置 protected，确保所有分支都能访问）
     variables.push({
-      key: 'SSH_PASSWORD',
-      value: config.sshPassword,
+      key: 'DEV_SSH_PASSWORD',
+      value: config.devSshPassword,
       protected: false,
       masked: true,
       variable_type: 'env_var',
-      description: '部署服务器 SSH 密码',
+      description: '开发服务器 SSH 密码',
+    });
+
+    // 生产环境 SSH 密码（设置 protected，仅 protected 分支可用）
+    variables.push({
+      key: 'PROD_SSH_PASSWORD',
+      value: config.prodSshPassword,
+      protected: true,
+      masked: true,
+      variable_type: 'env_var',
+      description: '生产服务器 SSH 密码',
     });
 
     // 服务器配置
@@ -189,8 +207,11 @@ export class VariableConfigurator {
     if (!config.gitlab.token) {
       errors.push('缺少 GitLab Token');
     }
-    if (!config.sshPassword) {
-      errors.push('缺少 SSH 密码');
+    if (!config.devSshPassword) {
+      errors.push('缺少开发环境 SSH 密码');
+    }
+    if (!config.prodSshPassword) {
+      errors.push('缺少生产环境 SSH 密码');
     }
     if (!config.server.testServerHost) {
       errors.push('缺少测试服务器地址');

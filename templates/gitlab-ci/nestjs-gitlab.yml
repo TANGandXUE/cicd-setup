@@ -158,13 +158,13 @@ deploy_dev:
     - echo "StrictHostKeyChecking no" >> ~/.ssh/config
     - chmod 600 ~/.ssh/config
   script:
-    - sshpass -p "$SSH_PASSWORD" ssh root@$TEST_SERVER_HOST "mkdir -p $DEPLOY_DIR"
-    - sshpass -p "$SSH_PASSWORD" ssh root@$TEST_SERVER_HOST "which rsync || apk add --no-cache rsync"
+    - sshpass -p "$DEV_SSH_PASSWORD" ssh root@$TEST_SERVER_HOST "mkdir -p $DEPLOY_DIR"
+    - sshpass -p "$DEV_SSH_PASSWORD" ssh root@$TEST_SERVER_HOST "which rsync || apk add --no-cache rsync"
     # 将环境变量文件写入本地，rsync 会同步到服务器（ENV_FILE_CONTENT 是文件路径）
     - cat "$ENV_FILE_CONTENT" > .env
-    - sshpass -p "$SSH_PASSWORD" rsync -avz --delete --exclude='.git/' --exclude='node_modules/' . root@$TEST_SERVER_HOST:$DEPLOY_DIR/
+    - sshpass -p "$DEV_SSH_PASSWORD" rsync -avz --delete --exclude='.git/' --exclude='node_modules/' . root@$TEST_SERVER_HOST:$DEPLOY_DIR/
     # 传递 GitLab Registry 凭据和镜像名到部署服务器
-    - sshpass -p "$SSH_PASSWORD" ssh root@$TEST_SERVER_HOST "export REGISTRY_URL='$CI_REGISTRY' && export REGISTRY_USERNAME='$CI_REGISTRY_USER' && export REGISTRY_PASSWORD='$CI_REGISTRY_PASSWORD' && export DOCKER_IMAGE='$CI_REGISTRY_IMAGE:latest' && export APP_PORT='$APP_PORT' && cd $DEPLOY_DIR && chmod +x ci/deploy.sh && bash ci/deploy.sh $ENV_TYPE gitlab"
+    - sshpass -p "$DEV_SSH_PASSWORD" ssh root@$TEST_SERVER_HOST "export REGISTRY_URL='$CI_REGISTRY' && export REGISTRY_USERNAME='$CI_REGISTRY_USER' && export REGISTRY_PASSWORD='$CI_REGISTRY_PASSWORD' && export DOCKER_IMAGE='$CI_REGISTRY_IMAGE:latest' && export APP_PORT='$APP_PORT' && cd $DEPLOY_DIR && chmod +x ci/deploy.sh && bash ci/deploy.sh $ENV_TYPE gitlab"
   environment:
     name: development
     url: "{{DEV_URL}}"
@@ -191,13 +191,13 @@ deploy_prod:
     - echo "StrictHostKeyChecking no" >> ~/.ssh/config
     - chmod 600 ~/.ssh/config
   script:
-    - sshpass -p "$SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "mkdir -p $DEPLOY_DIR"
-    - sshpass -p "$SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "which rsync || apk add --no-cache rsync"
+    - sshpass -p "$PROD_SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "mkdir -p $DEPLOY_DIR"
+    - sshpass -p "$PROD_SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "which rsync || apk add --no-cache rsync"
     # 将环境变量文件写入本地，rsync 会同步到服务器（ENV_FILE_CONTENT 是文件路径）
     - cat "$ENV_FILE_CONTENT" > .env
-    - sshpass -p "$SSH_PASSWORD" rsync -avz --delete --exclude='.git/' --exclude='node_modules/' . root@$PROD_SERVER_HOST:$DEPLOY_DIR/
+    - sshpass -p "$PROD_SSH_PASSWORD" rsync -avz --delete --exclude='.git/' --exclude='node_modules/' . root@$PROD_SERVER_HOST:$DEPLOY_DIR/
     # 传递 GitLab Registry 凭据和镜像名到部署服务器
-    - sshpass -p "$SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "export REGISTRY_URL='$CI_REGISTRY' && export REGISTRY_USERNAME='$CI_REGISTRY_USER' && export REGISTRY_PASSWORD='$CI_REGISTRY_PASSWORD' && export DOCKER_IMAGE='$CI_REGISTRY_IMAGE:latest' && export APP_PORT='$APP_PORT' && cd $DEPLOY_DIR && chmod +x ci/deploy.sh && bash ci/deploy.sh $ENV_TYPE gitlab"
+    - sshpass -p "$PROD_SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "export REGISTRY_URL='$CI_REGISTRY' && export REGISTRY_USERNAME='$CI_REGISTRY_USER' && export REGISTRY_PASSWORD='$CI_REGISTRY_PASSWORD' && export DOCKER_IMAGE='$CI_REGISTRY_IMAGE:latest' && export APP_PORT='$APP_PORT' && cd $DEPLOY_DIR && chmod +x ci/deploy.sh && bash ci/deploy.sh $ENV_TYPE gitlab"
   environment:
     name: production
     url: "{{PROD_URL}}"
@@ -223,9 +223,9 @@ rollback:
     - echo "StrictHostKeyChecking no" >> ~/.ssh/config
     - chmod 600 ~/.ssh/config
   script:
-    - sshpass -p "$SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "cd $DEPLOY_DIR && export APP_PORT=$APP_PORT && docker-compose down"
-    - sshpass -p "$SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "cd $DEPLOY_DIR && export APP_PORT=$APP_PORT && docker-compose pull"
-    - sshpass -p "$SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "cd $DEPLOY_DIR && export APP_PORT=$APP_PORT && docker-compose up -d"
+    - sshpass -p "$PROD_SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "cd $DEPLOY_DIR && export APP_PORT=$APP_PORT && docker-compose down"
+    - sshpass -p "$PROD_SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "cd $DEPLOY_DIR && export APP_PORT=$APP_PORT && docker-compose pull"
+    - sshpass -p "$PROD_SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "cd $DEPLOY_DIR && export APP_PORT=$APP_PORT && docker-compose up -d"
   environment:
     name: production
     url: "{{PROD_URL}}"

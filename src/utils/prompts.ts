@@ -74,15 +74,15 @@ export class PromptCollector {
       const gitlabConfig = await this.collectGitLabConfig();
       const projectConfig = await this.collectProjectConfig();
       const serverConfig = await this.collectServerConfig();
-      const sshPassword = await this.collectSSHPassword();
-      const databaseConfig = await this.collectDatabaseConfig(projectConfig.type, serverConfig.testServerHost, sshPassword);
+      const sshPasswords = await this.collectSSHPasswords(serverConfig);
+      const databaseConfig = await this.collectDatabaseConfig(projectConfig.type, serverConfig.testServerHost, sshPasswords.devSshPassword);
       const envFiles = await this.collectEnvFiles(databaseConfig);
 
       return {
         gitlab: gitlabConfig,
         project: projectConfig,
         server: serverConfig,
-        sshPassword,
+        ...sshPasswords,
         database: databaseConfig,
         ...envFiles,
       };
@@ -99,8 +99,10 @@ export class PromptCollector {
       console.log(`  项目类型:       ${config.project.type}`);
       console.log(`  开发端口:       ${config.project.devPort}`);
       console.log(`  生产端口:       ${config.project.prodPort}`);
-      console.log(`  服务器地址:     ${config.server.testServerHost}`);
-      console.log(`  SSH 密码:       ${config.sshPassword}`);
+      console.log(`  开发服务器:     ${config.server.testServerHost}`);
+      console.log(`  生产服务器:     ${config.server.prodServerHost}`);
+      console.log(`  开发SSH密码:    ${config.devSshPassword}`);
+      console.log(`  生产SSH密码:    ${config.prodSshPassword}`);
       if (config.project.devDomain) {
         console.log(`  开发域名:       ${config.project.devDomain}`);
         console.log(`  生产域名:       ${config.project.prodDomain}`);
@@ -142,9 +144,11 @@ export class PromptCollector {
       } else if (action === 'server') {
         config.server = await this.collectServerConfig();
       } else if (action === 'ssh') {
-        config.sshPassword = await this.collectSSHPassword();
+        const sshPasswords = await this.collectSSHPasswords(config.server);
+        config.devSshPassword = sshPasswords.devSshPassword;
+        config.prodSshPassword = sshPasswords.prodSshPassword;
       } else if (action === 'database') {
-        config.database = await this.collectDatabaseConfig(config.project.type, config.server.testServerHost, config.sshPassword);
+        config.database = await this.collectDatabaseConfig(config.project.type, config.server.testServerHost, config.devSshPassword);
       }
     }
 
@@ -361,56 +365,87 @@ export class PromptCollector {
   }
 
   /**
-   * 收集服务器配置（默认单服务器模式）
+   * 收集服务器配置
    */
   private async collectServerConfig() {
     console.log('\n🖥️  服务器配置\n');
-    console.log('ℹ️  使用单服务器模式（开发和生产环境在同一台服务器）\n');
 
-    const answers = await inquirer.prompt([
+    const { singleServer } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'singleServer',
+        message: '开发和生产环境是否使用同一台服务器？',
+        default: this.getDefault('server.singleServer', true),
+      },
+    ]);
+    this.setCache('server.singleServer', singleServer);
+
+    const { testServerHost } = await inquirer.prompt([
       {
         type: 'input',
         name: 'testServerHost',
-        message: '服务器地址 (IP 或域名):',
-        default: this.getDefault('server.host', ''),
+        message: singleServer ? '服务器地址 (IP 或域名):' : '开发服务器地址 (IP 或域名):',
+        default: this.getDefault('server.testHost', ''),
         validate: (input) => (input ? true : '请输入服务器地址'),
       },
     ]);
+    this.setCache('server.testHost', testServerHost);
 
-    // 保存到缓存
-    this.setCache('server.host', answers.testServerHost);
+    if (singleServer) {
+      return { singleServer: true, testServerHost, prodServerHost: testServerHost };
+    }
 
-    // 默认单服务器模式，开发和生产使用同一台服务器
-    return {
-      singleServer: true,
-      testServerHost: answers.testServerHost,
-      prodServerHost: answers.testServerHost,
-    };
+    const { prodServerHost } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'prodServerHost',
+        message: '生产服务器地址 (IP 或域名):',
+        default: this.getDefault('server.prodHost', ''),
+        validate: (input) => (input ? true : '请输入服务器地址'),
+      },
+    ]);
+    this.setCache('server.prodHost', prodServerHost);
+
+    return { singleServer: false, testServerHost, prodServerHost };
   }
 
   /**
-   * 收集 SSH 密码
+   * 收集 SSH 密码（开发和生产环境）
    */
-  private async collectSSHPassword(): Promise<string> {
+  private async collectSSHPasswords(serverConfig: { testServerHost: string; prodServerHost: string }): Promise<{ devSshPassword: string; prodSshPassword: string }> {
     console.log('\n🔑 SSH 密码配置\n');
 
-    const { password } = await inquirer.prompt([
+    const isSameServer = serverConfig.testServerHost === serverConfig.prodServerHost;
+
+    const { devPassword } = await inquirer.prompt([
       {
         type: 'input',
-        name: 'password',
-        message: '服务器 SSH 密码:',
-        default: this.getDefault('ssh.password', ''),
-        validate: (input) => {
-          if (!input) return '请输入 SSH 密码';
-          return true;
-        },
+        name: 'devPassword',
+        message: isSameServer ? '服务器 SSH 密码:' : `开发服务器 (${serverConfig.testServerHost}) SSH 密码:`,
+        default: this.getDefault('ssh.devPassword', ''),
+        validate: (input) => input ? true : '请输入 SSH 密码',
       },
     ]);
+    this.setCache('ssh.devPassword', devPassword);
 
-    // 保存到缓存
-    this.setCache('ssh.password', password);
+    // 如果是同一台服务器，生产密码与开发密码相同
+    if (isSameServer) {
+      this.setCache('ssh.prodPassword', devPassword);
+      return { devSshPassword: devPassword, prodSshPassword: devPassword };
+    }
 
-    return password;
+    const { prodPassword } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'prodPassword',
+        message: `生产服务器 (${serverConfig.prodServerHost}) SSH 密码:`,
+        default: this.getDefault('ssh.prodPassword', ''),
+        validate: (input) => input ? true : '请输入 SSH 密码',
+      },
+    ]);
+    this.setCache('ssh.prodPassword', prodPassword);
+
+    return { devSshPassword: devPassword, prodSshPassword: prodPassword };
   }
 
   /**

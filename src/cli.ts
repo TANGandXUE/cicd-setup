@@ -73,8 +73,13 @@ async function checkTsConfigRootDir(outputDir: string, inquirer: any, projectTyp
     }
     const unexcludedFiles = rootTsFiles.filter(f => !excludeList.includes(f));
 
+    // 检查是否需要 tsBuildInfoFile（考虑添加 rootDir 后的情况）
+    // 如果当前没有 rootDir 但有 incremental，添加 rootDir 后也需要 tsBuildInfoFile
+    const willNeedTsBuildInfoFile = tsconfig.compilerOptions?.incremental === true
+      && !tsconfig.compilerOptions?.tsBuildInfoFile;
+
     // 如果都配置好了，直接返回
-    if (!needsRootDir && unexcludedFiles.length === 0 && !needsTsBuildInfoFile) return;
+    if (!needsRootDir && unexcludedFiles.length === 0 && !needsTsBuildInfoFile && !willNeedTsBuildInfoFile) return;
 
     // 显示问题
     const issues: string[] = [];
@@ -84,7 +89,7 @@ async function checkTsConfigRootDir(outputDir: string, inquirer: any, projectTyp
     if (unexcludedFiles.length > 0) {
       issues.push(`根目录 .ts 文件未排除: ${unexcludedFiles.join(', ')}`);
     }
-    if (needsTsBuildInfoFile) {
+    if (needsTsBuildInfoFile || (needsRootDir && willNeedTsBuildInfoFile)) {
       issues.push('incremental 编译缓存位置问题（会导致 build 后 dist 目录为空）');
     }
 
@@ -139,7 +144,11 @@ async function checkTsConfigRootDir(outputDir: string, inquirer: any, projectTyp
       }
 
       // 3. 修复 tsBuildInfoFile
-      if (needsTsBuildInfoFile) {
+      // 重新计算条件，因为可能刚添加了 rootDir
+      const shouldFixTsBuildInfoFile = tsconfig.compilerOptions?.incremental === true
+        && tsconfig.compilerOptions?.rootDir
+        && !tsconfig.compilerOptions?.tsBuildInfoFile;
+      if (shouldFixTsBuildInfoFile) {
         tsconfig.compilerOptions.tsBuildInfoFile = `./${outDir}/.tsbuildinfo`;
         writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2) + '\n', 'utf-8');
         console.log(chalk.green(`✓ 已添加 tsBuildInfoFile: "./${outDir}/.tsbuildinfo" 到 tsconfig.json`));

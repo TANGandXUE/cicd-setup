@@ -159,8 +159,10 @@ export interface CICDConfig {
   gitlab: GitLabConfig;
   project: ProjectConfig;
   server: ServerConfig;
-  /** SSH 密码 */
-  sshPassword: string;
+  /** 开发环境 SSH 密码 */
+  devSshPassword: string;
+  /** 生产环境 SSH 密码 */
+  prodSshPassword: string;
   /** 开发环境 .env 文件内容 */
   devEnvFile?: string;
   /** 生产环境 .env 文件内容 */
