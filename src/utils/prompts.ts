@@ -4,6 +4,7 @@
  */
 
 import inquirer from 'inquirer';
+import chalk from 'chalk';
 import { CICDConfig, DatabaseConfig, DatabaseType, EnvDbConfig } from '../core/types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -254,6 +255,12 @@ export class PromptCollector {
     // 转换端口为数字
     answers.devPort = Number(answers.devPort);
     answers.prodPort = Number(answers.prodPort);
+
+    // 提示用户确认 .env 文件中的 PORT 配置
+    console.log(chalk.yellow('\n⚠️  重要提示：'));
+    console.log(chalk.white(`   请确保 GitLab CI/CD 变量中的 .env 文件 PORT 配置与上述端口一致：`));
+    console.log(chalk.white(`   - DEV_ENV_FILE 中的 PORT=${answers.devPort}`));
+    console.log(chalk.white(`   - PROD_ENV_FILE 中的 PORT=${answers.prodPort}\n`));
 
     // 保存到缓存
     this.setCache('project.name', answers.name);
