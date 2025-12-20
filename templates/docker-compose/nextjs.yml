@@ -1,0 +1,42 @@
+# Docker Compose 配置 - Next.js 项目
+# 独立配置文件，支持未来的 Next.js 特定优化
+
+services:
+  {{APP_NAME}}:
+    image: ${DOCKER_IMAGE:-{{APP_NAME}}:latest}
+    container_name: {{APP_NAME}}
+    ports:
+      - "${APP_PORT}:${APP_PORT}"
+    env_file:
+      - .env
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # 健康检查配置
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${APP_PORT}/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # 资源限制配置
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    # 日志管理配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

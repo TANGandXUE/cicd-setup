@@ -1,0 +1,277 @@
+# GitLab CI/CD 配置文件 - Next.js 项目（GitLab Container Registry）
+stages:
+  - lint
+  - build
+  - deploy
+
+# 全局变量
+variables:
+  DOCKER_DRIVER: overlay2
+  NODE_VERSION: "20"
+  APP_NAME: "{{APP_NAME}}"
+  GIT_STRATEGY: fetch
+  GIT_SSL_NO_VERIFY: "true"
+  DOCKER_PULL_POLICY: if-not-present
+  # 使用 GitLab Container Registry
+  DOCKER_IMAGE: $CI_REGISTRY_IMAGE
+
+# 全局缓存配置
+cache:
+  key: ${CI_COMMIT_REF_SLUG}-${CI_JOB_NAME}
+  paths:
+    - node_modules/
+    - .npm/
+
+# 代码质量检查阶段
+lint:
+  stage: lint
+  image:
+    name: node:20-alpine
+    pull_policy: if-not-present
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-node-modules
+    paths:
+      - node_modules/
+      - .npm/
+    policy: pull-push
+  before_script:
+    - apk add --no-cache git curl jq
+    - git --version
+    - echo "Setting up Git authentication..."
+    - git config --global http.sslVerify false
+    - git config --global url."https://oauth2:${GITLAB_ACCESS_TOKEN}@{{GITLAB_HOST}}".insteadOf "http://{{GITLAB_HOST}}"
+    - git config --global url."https://oauth2:${GITLAB_ACCESS_TOKEN}@{{GITLAB_HOST}}".insteadOf "https://{{GITLAB_HOST}}"
+    - npm ci --cache .npm --prefer-offline
+  script:
+    - |
+      # 智能检测并运行 lint 命令
+      echo "检测可用的 lint 命令..."
+      LINT_FAILED=0
+
+      if npm run | grep -q "lint:check"; then
+        echo "✓ 运行 npm run lint:check"
+        if ! npm run lint:check; then
+          LINT_FAILED=1
+        fi
+      elif npm run | grep -q "lint"; then
+        echo "✓ 运行 npm run lint"
+        if ! npm run lint; then
+          LINT_FAILED=1
+        fi
+      elif npm run | grep -q "type-check"; then
+        echo "✓ 运行 npm run type-check"
+        if ! npm run type-check; then
+          LINT_FAILED=1
+        fi
+      else
+        echo "⚠️  未找到 lint 相关命令，跳过代码检查"
+        echo "建议在 package.json 中添加以下命令之一："
+        echo "  - lint:check (推荐)"
+        echo "  - lint"
+        echo "  - type-check"
+      fi
+
+      # 如果 lint 失败，输出友好的中文提示
+      if [ $LINT_FAILED -eq 1 ]; then
+        echo ""
+        echo "======================================================================"
+        echo "❌ 代码质量检查未通过"
+        echo "======================================================================"
+        echo ""
+        echo "📋 发现了一些代码质量问题，需要修复后才能继续部署。"
+        echo ""
+        echo "🔧 快速修复方法："
+        echo ""
+        echo "  1. 在本地运行自动修复："
+        echo "     npm run lint"
+        echo ""
+        echo "  2. 查看具体问题："
+        echo "     npm run lint:check"
+        echo ""
+        echo "  3. 修复后提交："
+        echo "     git add ."
+        echo "     git commit -m \"fix: 修复代码质量问题\""
+        echo "     git push"
+        echo ""
+        echo "💡 常见问题类型："
+        echo "  - TypeScript 类型安全问题（使用了 any 类型）"
+        echo "  - 未使用的变量或导入"
+        echo "  - async 函数缺少 await"
+        echo "  - Promise 未正确处理"
+        echo ""
+        echo "📖 详细错误信息请查看上方输出"
+        echo "======================================================================"
+        echo ""
+        exit 1
+      fi
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# 开发环境构建（develop 分支）
+build_dev:
+  stage: build
+  cache: {}
+  image:
+    name: docker:24.0.5
+    pull_policy: if-not-present
+  variables:
+    ENV_FILE_CONTENT: $DEV_ENV_FILE
+    GIT_STRATEGY: clone
+  before_script:
+    - docker info
+    - echo "登录到 GitLab Container Registry..."
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  script:
+    - echo "写入开发环境配置..."
+    - cat "$ENV_FILE_CONTENT" > .env
+    - echo "=== 调试：.env 文件内容 ==="
+    - cat .env
+    - echo "=== 调试：.dockerignore 文件内容 ==="
+    - cat .dockerignore
+    - echo "=== 调试结束 ==="
+    - echo "拉取之前的镜像用于缓存..."
+    - docker pull $DOCKER_IMAGE:dev || true
+    - echo "构建Docker镜像（使用缓存）..."
+    - |
+      docker build \
+        --cache-from $DOCKER_IMAGE:dev \
+        -t $DOCKER_IMAGE:$CI_COMMIT_SHA \
+        -t $DOCKER_IMAGE:dev .
+    - echo "推送镜像到 GitLab Container Registry..."
+    - docker push $DOCKER_IMAGE:$CI_COMMIT_SHA
+    - docker push $DOCKER_IMAGE:dev
+  only:
+    - develop
+
+# 生产环境构建（main 分支）
+build_prod:
+  stage: build
+  cache: {}
+  image:
+    name: docker:24.0.5
+    pull_policy: if-not-present
+  variables:
+    ENV_FILE_CONTENT: $PROD_ENV_FILE
+    GIT_STRATEGY: clone
+  before_script:
+    - docker info
+    - echo "登录到 GitLab Container Registry..."
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  script:
+    - echo "写入生产环境配置..."
+    - cat "$ENV_FILE_CONTENT" > .env
+    - echo "=== 调试：.env 文件内容 ==="
+    - cat .env
+    - echo "=== 调试：.dockerignore 文件内容 ==="
+    - cat .dockerignore
+    - echo "=== 调试结束 ==="
+    - echo "拉取之前的镜像用于缓存..."
+    - docker pull $DOCKER_IMAGE:latest || true
+    - echo "构建Docker镜像（使用缓存）..."
+    - |
+      docker build \
+        --cache-from $DOCKER_IMAGE:latest \
+        -t $DOCKER_IMAGE:$CI_COMMIT_SHA \
+        -t $DOCKER_IMAGE:latest .
+    - echo "推送镜像到 GitLab Container Registry..."
+    - docker push $DOCKER_IMAGE:$CI_COMMIT_SHA
+    - docker push $DOCKER_IMAGE:latest
+  only:
+    - main
+
+# 开发环境部署（develop 分支自动触发）
+deploy_dev:
+  stage: deploy
+  image:
+    name: alpine:latest
+    pull_policy: if-not-present
+  variables:
+    ENV_TYPE: "development"
+    ENV_FILE_CONTENT: $DEV_ENV_FILE
+    DEPLOY_DIR: "{{DEPLOY_DIR}}"
+    APP_PORT: "{{DEV_PORT}}"
+  cache: {}
+  before_script:
+    - apk add --no-cache sshpass bash openssl rsync openssh-client
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    # 使用密码认证，跳过 SSH 主机密钥检查
+    - echo "StrictHostKeyChecking no" >> ~/.ssh/config
+    - chmod 600 ~/.ssh/config
+  script:
+    - sshpass -p "$DEV_SSH_PASSWORD" ssh root@$TEST_SERVER_HOST "mkdir -p $DEPLOY_DIR"
+    - sshpass -p "$DEV_SSH_PASSWORD" ssh root@$TEST_SERVER_HOST "which rsync || apk add --no-cache rsync"
+    # 将环境变量文件写入本地，rsync 会同步到服务器（ENV_FILE_CONTENT 是文件路径）
+    - cat "$ENV_FILE_CONTENT" > .env
+    - sshpass -p "$DEV_SSH_PASSWORD" rsync -avz --delete --exclude='.git/' --exclude='node_modules/' . root@$TEST_SERVER_HOST:$DEPLOY_DIR/
+    # 传递 GitLab Registry 凭据和镜像名到部署服务器
+    - sshpass -p "$DEV_SSH_PASSWORD" ssh root@$TEST_SERVER_HOST "export REGISTRY_URL='$CI_REGISTRY' && export REGISTRY_USERNAME='$CI_REGISTRY_USER' && export REGISTRY_PASSWORD='$CI_REGISTRY_PASSWORD' && export DOCKER_IMAGE='$CI_REGISTRY_IMAGE:dev' && export APP_PORT='$APP_PORT' && cd $DEPLOY_DIR && chmod +x ci/deploy.sh && bash ci/deploy.sh $ENV_TYPE gitlab"
+  environment:
+    name: development
+    url: "{{DEV_URL}}"
+  only:
+    - develop
+
+# 生产环境部署（main 分支手动触发）
+deploy_prod:
+  stage: deploy
+  image:
+    name: alpine:latest
+    pull_policy: if-not-present
+  variables:
+    ENV_TYPE: "production"
+    ENV_FILE_CONTENT: $PROD_ENV_FILE
+    DEPLOY_DIR: "{{DEPLOY_DIR}}"
+    APP_PORT: "{{PROD_PORT}}"
+  cache: {}
+  before_script:
+    - apk add --no-cache sshpass bash openssl rsync openssh-client
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    # 使用密码认证，跳过 SSH 主机密钥检查
+    - echo "StrictHostKeyChecking no" >> ~/.ssh/config
+    - chmod 600 ~/.ssh/config
+  script:
+    - sshpass -p "$PROD_SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "mkdir -p $DEPLOY_DIR"
+    - sshpass -p "$PROD_SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "which rsync || apk add --no-cache rsync"
+    # 将环境变量文件写入本地，rsync 会同步到服务器（ENV_FILE_CONTENT 是文件路径）
+    - cat "$ENV_FILE_CONTENT" > .env
+    - sshpass -p "$PROD_SSH_PASSWORD" rsync -avz --delete --exclude='.git/' --exclude='node_modules/' . root@$PROD_SERVER_HOST:$DEPLOY_DIR/
+    # 传递 GitLab Registry 凭据和镜像名到部署服务器
+    - sshpass -p "$PROD_SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "export REGISTRY_URL='$CI_REGISTRY' && export REGISTRY_USERNAME='$CI_REGISTRY_USER' && export REGISTRY_PASSWORD='$CI_REGISTRY_PASSWORD' && export DOCKER_IMAGE='$CI_REGISTRY_IMAGE:latest' && export APP_PORT='$APP_PORT' && cd $DEPLOY_DIR && chmod +x ci/deploy.sh && bash ci/deploy.sh $ENV_TYPE gitlab"
+  environment:
+    name: production
+    url: "{{PROD_URL}}"
+  only:
+    - main
+  when: manual
+
+# 回滚部署（可选）
+rollback:
+  stage: deploy
+  image:
+    name: alpine:latest
+    pull_policy: if-not-present
+  variables:
+    DEPLOY_DIR: "{{DEPLOY_DIR}}"
+    APP_PORT: "{{PROD_PORT}}"
+  cache: {}
+  before_script:
+    - apk add --no-cache sshpass bash openssl
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    # 使用密码认证，跳过 SSH 主机密钥检查
+    - echo "StrictHostKeyChecking no" >> ~/.ssh/config
+    - chmod 600 ~/.ssh/config
+  script:
+    - sshpass -p "$PROD_SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "cd $DEPLOY_DIR && export APP_PORT=$APP_PORT && docker-compose down"
+    - sshpass -p "$PROD_SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "cd $DEPLOY_DIR && export APP_PORT=$APP_PORT && docker-compose pull"
+    - sshpass -p "$PROD_SSH_PASSWORD" ssh root@$PROD_SERVER_HOST "cd $DEPLOY_DIR && export APP_PORT=$APP_PORT && docker-compose up -d"
+  environment:
+    name: production
+    url: "{{PROD_URL}}"
+  when: manual
+  only:
+    - main

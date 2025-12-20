@@ -1,0 +1,70 @@
+# Next.js .dockerignore
+# 不忽略 .env 文件（Next.js 需要在构建时读取 NEXT_PUBLIC_* 环境变量）
+
+# Dependencies
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Testing
+coverage
+.nyc_output
+
+# Next.js
+.next/
+out/
+
+# Production
+build/
+dist/
+
+# Misc
+.DS_Store
+*.pem
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env files (but not .env itself - needed for build)
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+
+# Vercel
+.vercel
+
+# Typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+
+# Docker
+Dockerfile
+.dockerignore
+
+# CI/CD
+.gitlab-ci.yml
+ci/
+scripts/
+docker-compose.yml
+
+# Docs
+README.md
+docs/
+
+# Logs
+logs/
+*.log
