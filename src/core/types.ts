@@ -64,7 +64,7 @@ export interface GitLabVariable extends CICDVariable {
 /**
  * 项目类型
  */
-export type ProjectType = 'nestjs' | 'vue' | 'react' | 'node';
+export type ProjectType = 'nestjs' | 'vue' | 'react' | 'node' | 'nextjs';
 
 /**
  * 部署环境类型
@@ -99,6 +99,8 @@ export interface ProjectConfig {
   enableSsl?: boolean;
   /** SSL 证书邮箱（用于 Let's Encrypt） */
   sslEmail?: string;
+  /** 生产环境部署是否需要手动确认（默认 true） */
+  prodManualDeploy?: boolean;
 }
 
 /**

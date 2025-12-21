@@ -227,6 +227,88 @@ async function checkPackageLockIgnored(outputDir: string, inquirer: any): Promis
   }
 }
 
+/**
+ * 检查 Next.js 项目的 next.config 配置，确保启用 Standalone 模式
+ */
+async function checkNextConfig(outputDir: string, inquirer: any, projectType: string): Promise<void> {
+  // 只检查 Next.js 项目
+  if (projectType !== 'nextjs') return;
+
+  // 检查多种可能的配置文件
+  const possibleConfigs = [
+    'next.config.js',
+    'next.config.mjs',
+    'next.config.ts'
+  ];
+
+  let configPath: string | null = null;
+  let configContent: string | null = null;
+
+  for (const configFile of possibleConfigs) {
+    const filePath = path.join(outputDir, configFile);
+    if (existsSync(filePath)) {
+      configPath = filePath;
+      configContent = readFileSync(filePath, 'utf-8');
+      break;
+    }
+  }
+
+  if (!configPath || !configContent) {
+    console.log(chalk.yellow('\n⚠️  未找到 next.config.js/mjs/ts 文件'));
+    console.log(chalk.gray('   Next.js 项目需要配置 Standalone 模式以优化部署'));
+    return;
+  }
+
+  // 检查是否包含 output: 'standalone'
+  const hasStandaloneConfig =
+    configContent.includes("output: 'standalone'") ||
+    configContent.includes('output:"standalone"') ||
+    configContent.includes("output: \"standalone\"") ||
+    configContent.includes('output:`standalone`');
+
+  if (hasStandaloneConfig) {
+    // 已配置，无需操作
+    return;
+  }
+
+  // 未配置，提示用户
+  console.log(chalk.yellow('\n⚠️  Next.js 配置检查'));
+  console.log(chalk.gray('   未检测到 Standalone 模式配置'));
+  console.log(chalk.gray('   Standalone 模式可大幅减少镜像体积（200MB+ → 30MB）'));
+  console.log(chalk.gray(`   配置文件：${path.basename(configPath)}\n`));
+
+  const { action } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'action',
+      message: '是否需要配置 Standalone 模式？',
+      choices: [
+        { name: '是，显示配置方法（推荐）', value: 'show' },
+        { name: '否，我知道如何配置', value: 'skip' },
+        { name: '否，我不需要 Standalone 模式', value: 'ignore' }
+      ],
+      default: 'show'
+    }
+  ]);
+
+  if (action === 'show') {
+    console.log(chalk.cyan('\n📝 配置方法：'));
+    console.log(chalk.white(`\n  在 ${path.basename(configPath)} 中添加以下配置：\n`));
+    console.log(chalk.green('  module.exports = {'));
+    console.log(chalk.green("    output: 'standalone',"));
+    console.log(chalk.green('    // ... 其他配置'));
+    console.log(chalk.green('  }\n'));
+    console.log(chalk.gray('  如果使用 ES Module (next.config.mjs):'));
+    console.log(chalk.green('  export default {'));
+    console.log(chalk.green("    output: 'standalone',"));
+    console.log(chalk.green('  }\n'));
+    console.log(chalk.yellow('⚠️  配置后请重新构建项目：npm run build\n'));
+  } else if (action === 'ignore') {
+    console.log(chalk.yellow('⚠️  警告：不使用 Standalone 模式将导致镜像体积过大（200MB+）'));
+    console.log(chalk.gray('   Dockerfile 可能需要调整以支持标准模式\n'));
+  }
+}
+
 // 读取 package.json 获取版本号
 const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
@@ -324,6 +406,7 @@ program
       // 3.5 项目配置检查
       await checkPackageLockIgnored(options.output, inquirer);
       await checkTsConfigRootDir(options.output, inquirer, config.project.type);
+      await checkNextConfig(options.output, inquirer, config.project.type);
 
       // 4. 生成文件
       spinner.start('正在生成 CI/CD 配置文件...');

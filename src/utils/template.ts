@@ -46,10 +46,17 @@ export class TemplateGenerator {
       DEV_URL: config.devUrl || `http://localhost:${config.devPort}`,
       PROD_URL: config.prodUrl || `http://localhost:${config.prodPort}`,
       GITLAB_HOST: gitlabHost.replace(/^https?:\/\//, ''),
+      // 生产环境部署确认配置：如果需要手动确认则添加 when: manual，否则为空
+      PROD_DEPLOY_WHEN: config.prodManualDeploy !== false ? '  when: manual' : '',
     };
 
     // 替换占位符
-    return this.replacePlaceholders(template, variables);
+    let result = this.replacePlaceholders(template, variables);
+
+    // 清理空行（当 PROD_DEPLOY_WHEN 为空时会留下空行）
+    result = result.replace(/\n\s*\n\s*\n/g, '\n\n');
+
+    return result;
   }
 
   /**
@@ -164,9 +171,14 @@ export class TemplateGenerator {
    * 生成 .dockerignore 文件内容
    * 前端项目(vue/react)不忽略.env，因为Vite需要在构建时读取环境变量
    * 后端项目(nestjs/node)忽略.env，运行时从环境变量读取
+   * Next.js项目不忽略.env，因为需要在构建时内联 NEXT_PUBLIC_* 变量
    */
   generateDockerignore(projectType: ProjectType): string {
-    const templateName = (projectType === 'vue' || projectType === 'react') ? 'vue' : 'nestjs';
+    const templateName = (() => {
+      if (projectType === 'vue' || projectType === 'react') return 'vue';
+      if (projectType === 'nextjs') return 'nextjs';
+      return 'nestjs';
+    })();
     const templatePath = path.join(this.templatesDir, 'dockerfile', `${templateName}.dockerignore`);
     return fs.readFileSync(templatePath, 'utf-8');
   }
@@ -323,6 +335,7 @@ export class TemplateGenerator {
       vue: 'vue-gitlab',
       react: 'vue-gitlab', // React 使用和 Vue 相同的模板
       node: 'nestjs-gitlab', // 通用 Node.js 项目使用 NestJS 模板
+      nextjs: 'nextjs-gitlab', // Next.js 使用专用模板
     };
     return templateMapping[projectType] || 'nestjs-gitlab';
   }
@@ -336,6 +349,7 @@ export class TemplateGenerator {
       vue: 'vue',
       react: 'vue', // React 使用和 Vue 相同的模板
       node: 'nestjs', // 通用 Node.js 项目使用 NestJS 模板
+      nextjs: 'nextjs', // Next.js 使用独立配置
     };
 
     return templateMapping[projectType] || 'nestjs';
@@ -350,6 +364,7 @@ export class TemplateGenerator {
       vue: 'vue',
       react: 'vue', // React 使用和 Vue 相同的模板
       node: 'nestjs', // 通用 Node.js 项目使用 NestJS 模板
+      nextjs: 'nextjs', // Next.js 使用专用 Dockerfile
     };
 
     return templateMapping[projectType] || 'nestjs';
@@ -364,6 +379,7 @@ export class TemplateGenerator {
       vue: 'npm run type-check',
       react: 'npm run type-check',
       node: 'npm run lint',
+      nextjs: 'npm run type-check', // Next.js 使用 type-check
     };
 
     return commands[projectType] || 'npm run lint';

@@ -113,6 +113,7 @@ export class PromptCollector {
         console.log(`  开发数据库:     ${config.database.dev.dbName}@${config.database.dev.host}`);
         console.log(`  生产数据库:     ${config.database.prod.dbName}@${config.database.prod.host}`);
       }
+      console.log(`  生产部署确认:   ${config.project.prodManualDeploy !== false ? '需要手动确认' : '自动部署'}`);
 
       const { action } = await inquirer.prompt([
         {
@@ -222,6 +223,7 @@ export class PromptCollector {
           { name: 'Vue 前端', value: 'vue' },
           { name: 'React 前端', value: 'react' },
           { name: 'Node.js 通用', value: 'node' },
+          { name: 'Next.js 全栈', value: 'nextjs' },
         ],
       },
       {
@@ -356,6 +358,27 @@ export class PromptCollector {
       }
     }
 
+    // 询问生产环境部署是否需要手动确认
+    console.log('\n🚀 生产环境部署配置\n');
+    const deployConfig = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'prodManualDeploy',
+        message: '生产环境部署是否需要手动确认？',
+        default: this.getDefault('deploy.prodManual', true),
+      },
+    ]);
+
+    // 保存到缓存
+    this.setCache('deploy.prodManual', deployConfig.prodManualDeploy);
+
+    if (deployConfig.prodManualDeploy) {
+      console.log('✓ 生产环境部署需要手动确认（在 GitLab Pipeline 中点击触发）');
+    } else {
+      console.log('✓ 生产环境部署将自动执行（main 分支推送后自动部署）');
+      console.log(chalk.yellow('  ⚠️  提醒：自动部署可能带来风险，请确保有完善的代码审查流程'));
+    }
+
     // 根据域名和 SSL 配置自动生成 URL（用于 GitLab 环境链接显示）
     if (nginxConfig.devDomain) {
       const protocol = sslConfig.enableSsl ? 'https' : 'http';
@@ -368,7 +391,7 @@ export class PromptCollector {
       answers.prodUrl = '';
     }
 
-    return { ...answers, ...nginxConfig, ...sslConfig };
+    return { ...answers, ...nginxConfig, ...sslConfig, ...deployConfig };
   }
 
   /**
@@ -598,8 +621,8 @@ export class PromptCollector {
    * 收集数据库配置（包含自动创建和迁移）
    */
   private async collectDatabaseConfig(projectType: string, serverHost: string, sshPassword: string): Promise<DatabaseConfig | undefined> {
-    // 仅后端项目询问数据库配置
-    if (projectType !== 'nestjs' && projectType !== 'node') {
+    // 仅后端项目和 Next.js 全栈项目询问数据库配置
+    if (projectType !== 'nestjs' && projectType !== 'node' && projectType !== 'nextjs') {
       return undefined;
     }
 

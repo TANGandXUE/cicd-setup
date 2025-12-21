@@ -105,7 +105,7 @@ export class VariableConfigurator {
     }
 
     // 前端项目也可能需要环境变量文件（用于构建时注入）
-    if (projectType === 'vue' || projectType === 'react') {
+    if (projectType === 'vue' || projectType === 'react' || projectType === 'nextjs') {
       definitions.push(...ENV_FILE_VARIABLES);
     }
 

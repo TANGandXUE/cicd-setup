@@ -203,7 +203,7 @@ deploy_prod:
     url: "{{PROD_URL}}"
   only:
     - main
-  when: manual
+{{PROD_DEPLOY_WHEN}}
 
 # 回滚部署（可选）
 rollback:

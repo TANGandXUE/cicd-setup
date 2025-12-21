@@ -155,6 +155,27 @@ export class PackageHelper {
       }
     }
 
+    // Next.js 项目
+    if (projectType === 'nextjs') {
+      // 检查是否有 type-check
+      if (!existingScripts['type-check']) {
+        required.push({
+          name: 'type-check',
+          command: 'tsc --noEmit',
+          description: 'TypeScript 类型检查',
+        });
+      }
+
+      // 检查是否有 lint
+      if (!existingScripts['lint:check'] && !existingScripts['lint']) {
+        required.push({
+          name: 'lint',
+          command: 'next lint',
+          description: 'Next.js ESLint 检查',
+        });
+      }
+    }
+
     return required;
   }
 }
