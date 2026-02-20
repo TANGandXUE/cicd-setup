@@ -114,7 +114,7 @@ build:
   stage: build
   cache: {}
   image:
-    name: docker:24.0.5
+    name: docker:27
     pull_policy: if-not-present
   # 不使用 DinD 服务，通过 Socket Binding 使用宿主机 Docker
   # 需要 Runner 配置: volumes = ["/var/run/docker.sock:/var/run/docker.sock"]
