@@ -13,6 +13,8 @@ ENABLE_MIGRATION="{{ENABLE_MIGRATION}}"  # 是否启用数据库迁移: true/fal
 MIGRATION_COMMAND="{{MIGRATION_COMMAND}}"  # 迁移命令，默认 npm run migration:run
 ENABLE_SSL="{{ENABLE_SSL}}"  # 是否启用 SSL: true/false
 SSL_EMAIL="{{SSL_EMAIL}}"  # SSL 证书邮箱
+ENABLE_DOCKER_CLEANUP="{{ENABLE_DOCKER_CLEANUP}}"  # 是否启用 Docker 清理: true/false
+DOCKER_CLEANUP_STRATEGY="{{DOCKER_CLEANUP_STRATEGY}}"  # 清理策略: aggressive(激进)/gentle(温和)
 
 # 根据环境设置端口和域名
 if [ "$ENV_TYPE" = "production" ]; then
@@ -735,11 +737,59 @@ else
   echo "跳过数据库迁移（未启用）"
 fi
 
+# Docker 清理函数
+cleanup_docker() {
+    if [ "$ENABLE_DOCKER_CLEANUP" != "true" ]; then
+        echo "跳过 Docker 清理（未启用）"
+        return
+    fi
+
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════════╗"
+    echo "║                    🧹 Docker 清理                              ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
+    echo ""
+
+    # 显示清理前的磁盘使用情况
+    echo "清理前 Docker 磁盘使用情况:"
+    docker system df 2>/dev/null || true
+    echo ""
+
+    if [ "$DOCKER_CLEANUP_STRATEGY" = "gentle" ]; then
+        echo "执行温和清理（保留 7 天内的镜像）..."
+        # 清理悬空镜像（<none> 标签）
+        docker image prune -f 2>/dev/null || true
+        # 清理超过 7 天未使用的镜像
+        docker image prune -a --filter "until=168h" -f 2>/dev/null || true
+    else
+        echo "执行激进清理（清理所有未使用的镜像）..."
+        # 清理所有未使用的镜像
+        docker image prune -af 2>/dev/null || true
+    fi
+
+    # 清理未使用的构建缓存
+    echo "清理构建缓存..."
+    docker builder prune -f 2>/dev/null || true
+
+    # 清理未使用的网络
+    echo "清理未使用的网络..."
+    docker network prune -f 2>/dev/null || true
+
+    echo ""
+    echo "清理后 Docker 磁盘使用情况:"
+    docker system df 2>/dev/null || true
+    echo ""
+    echo "✓ Docker 清理完成"
+}
+
 # 配置 Nginx 反向代理和 SSL
 if [ "$ENABLE_SSL" = "true" ]; then
     configure_ssl "$DOMAIN" "$APP_PORT" "$SSL_EMAIL"
 else
     configure_nginx_proxy "$DOMAIN" "$APP_PORT"
 fi
+
+# 执行 Docker 清理
+cleanup_docker
 
 echo "部署完成!"

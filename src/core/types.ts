@@ -101,6 +101,10 @@ export interface ProjectConfig {
   sslEmail?: string;
   /** 生产环境部署是否需要手动确认（默认 true） */
   prodManualDeploy?: boolean;
+  /** 是否启用 Docker 清理（默认 true） */
+  enableDockerCleanup?: boolean;
+  /** Docker 清理策略：aggressive（激进，默认）或 gentle（温和，保留7天） */
+  dockerCleanupStrategy?: 'aggressive' | 'gentle';
 }
 
 /**

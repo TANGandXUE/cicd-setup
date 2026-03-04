@@ -114,6 +114,10 @@ export class PromptCollector {
         console.log(`  生产数据库:     ${config.database.prod.dbName}@${config.database.prod.host}`);
       }
       console.log(`  生产部署确认:   ${config.project.prodManualDeploy !== false ? '需要手动确认' : '自动部署'}`);
+      console.log(`  Docker 清理:    ${config.project.enableDockerCleanup !== false ? '已启用' : '已禁用'}`);
+      if (config.project.enableDockerCleanup !== false) {
+        console.log(`  清理策略:       ${config.project.dockerCleanupStrategy === 'gentle' ? '温和（保留7天）' : '激进（全部清理）'}`);
+      }
 
       const { action } = await inquirer.prompt([
         {
@@ -379,6 +383,43 @@ export class PromptCollector {
       console.log(chalk.yellow('  ⚠️  提醒：自动部署可能带来风险，请确保有完善的代码审查流程'));
     }
 
+    // Docker 清理配置
+    console.log('\n🧹 Docker 清理配置\n');
+    const dockerCleanupConfig = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'enableDockerCleanup',
+        message: '是否在部署后自动清理旧 Docker 镜像？',
+        default: this.getDefault('docker.cleanup.enabled', true),
+      },
+      {
+        type: 'list',
+        name: 'dockerCleanupStrategy',
+        message: '清理策略：',
+        default: this.getDefault('docker.cleanup.strategy', 'aggressive'),
+        choices: [
+          { name: '激进清理 - 清理所有未使用的镜像（推荐，节省空间）', value: 'aggressive' },
+          { name: '温和清理 - 保留 7 天内的镜像（便于快速回滚）', value: 'gentle' },
+        ],
+        when: (ans: any) => ans.enableDockerCleanup,
+      },
+    ]);
+
+    // 保存到缓存
+    this.setCache('docker.cleanup.enabled', dockerCleanupConfig.enableDockerCleanup);
+    if (dockerCleanupConfig.dockerCleanupStrategy) {
+      this.setCache('docker.cleanup.strategy', dockerCleanupConfig.dockerCleanupStrategy);
+    }
+
+    if (dockerCleanupConfig.enableDockerCleanup) {
+      const strategyDesc = dockerCleanupConfig.dockerCleanupStrategy === 'gentle'
+        ? '温和清理（保留 7 天内的镜像）'
+        : '激进清理（清理所有未使用的镜像）';
+      console.log(`✓ 已启用 Docker 自动清理: ${strategyDesc}`);
+    } else {
+      console.log('✓ 已禁用 Docker 自动清理');
+    }
+
     // 根据域名和 SSL 配置自动生成 URL（用于 GitLab 环境链接显示）
     if (nginxConfig.devDomain) {
       const protocol = sslConfig.enableSsl ? 'https' : 'http';
@@ -391,7 +432,7 @@ export class PromptCollector {
       answers.prodUrl = '';
     }
 
-    return { ...answers, ...nginxConfig, ...sslConfig, ...deployConfig };
+    return { ...answers, ...nginxConfig, ...sslConfig, ...deployConfig, ...dockerCleanupConfig };
   }
 
   /**

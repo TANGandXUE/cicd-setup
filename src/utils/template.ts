@@ -91,6 +91,9 @@ export class TemplateGenerator {
       // 迁移配置（从 database 读取）
       ENABLE_MIGRATION: database?.enableMigration ? 'true' : 'false',
       MIGRATION_COMMAND: database?.migrationCommand || 'npm run migration:run',
+      // Docker 清理配置（默认启用激进清理）
+      ENABLE_DOCKER_CLEANUP: config.enableDockerCleanup !== false ? 'true' : 'false',
+      DOCKER_CLEANUP_STRATEGY: config.dockerCleanupStrategy || 'aggressive',
     };
 
     return this.replacePlaceholders(template, variables);
