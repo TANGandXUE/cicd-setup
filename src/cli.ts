@@ -605,6 +605,224 @@ program
   });
 
 program
+  .command('updateenv')
+  .description('更新 GitLab 上的环境变量文件（DEV_ENV_FILE 和 PROD_ENV_FILE）')
+  .option('-o, --output <dir>', '项目目录', process.cwd())
+  .option('--dev-file <file>', '开发环境 .env 文件路径', '.env.dev')
+  .option('--prod-file <file>', '生产环境 .env 文件路径', '.env.prod')
+  .action(async (options) => {
+    try {
+      console.log(chalk.bold.cyan('\n🔄 CloudDreamAI 环境变量更新工具\n'));
+
+      // 导入 inquirer
+      const inquirer = (await import('inquirer')).default;
+
+      // 1. 读取环境变量文件
+      const devEnvPath = path.join(options.output, options.devFile);
+      const prodEnvPath = path.join(options.output, options.prodFile);
+
+      let devEnvContent: string | null = null;
+      let prodEnvContent: string | null = null;
+
+      // 检查开发环境文件
+      if (existsSync(devEnvPath)) {
+        devEnvContent = readFileSync(devEnvPath, 'utf-8');
+        console.log(chalk.green(`✓ 读取开发环境文件: ${options.devFile} (${devEnvContent.split('\n').length} 行)`));
+      } else {
+        console.log(chalk.yellow(`⚠️  开发环境文件不存在: ${devEnvPath}`));
+      }
+
+      // 检查生产环境文件
+      if (existsSync(prodEnvPath)) {
+        prodEnvContent = readFileSync(prodEnvPath, 'utf-8');
+        console.log(chalk.green(`✓ 读取生产环境文件: ${options.prodFile} (${prodEnvContent.split('\n').length} 行)`));
+      } else {
+        console.log(chalk.yellow(`⚠️  生产环境文件不存在: ${prodEnvPath}`));
+      }
+
+      // 如果两个文件都不存在，退出
+      if (!devEnvContent && !prodEnvContent) {
+        console.log(chalk.red('\n❌ 没有找到任何环境变量文件'));
+        console.log(chalk.gray('请确保存在 .env.dev 或 .env.prod 文件，或使用 --dev-file 和 --prod-file 指定路径\n'));
+        process.exit(1);
+      }
+
+      // 2. 收集 GitLab 配置
+      console.log(chalk.cyan('\n📦 GitLab 配置\n'));
+
+      // 尝试从缓存读取
+      const cachePath = path.join(options.output, '.cicd-setup-cache.json');
+      let cachedConfig: { gitlab?: { baseUrl?: string; token?: string } } = {};
+      if (existsSync(cachePath)) {
+        try {
+          cachedConfig = JSON.parse(readFileSync(cachePath, 'utf-8'));
+        } catch { /* ignore */ }
+      }
+
+      const gitlabConfig = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'baseUrl',
+          message: 'GitLab 实例 URL:',
+          default: cachedConfig.gitlab?.baseUrl || 'https://gitlab.clouddreamai.com',
+          validate: (input) => {
+            if (!input) return '请输入 GitLab URL';
+            if (!input.startsWith('http')) return 'URL 必须以 http:// 或 https:// 开头';
+            return true;
+          },
+        },
+        {
+          type: 'input',
+          name: 'token',
+          message: 'GitLab Personal Access Token:',
+          default: cachedConfig.gitlab?.token || '',
+          validate: (input) => (input ? true : '请输入 Access Token'),
+        },
+      ]);
+
+      // 3. 测试 GitLab 连接
+      const spinner = ora('正在测试 GitLab 连接...').start();
+      const gitlabClient = createGitLabClient(gitlabConfig);
+      const testResult = await gitlabClient.testConnection();
+
+      if (!testResult.success) {
+        spinner.fail(chalk.red(`GitLab 连接失败: ${testResult.error}`));
+        process.exit(1);
+      }
+
+      spinner.succeed(chalk.green(`GitLab 连接成功 (用户: ${testResult.data?.username})`));
+
+      // 4. 搜索项目
+      let selectedProject: number | null = null;
+
+      while (!selectedProject) {
+        const { searchKeyword } = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'searchKeyword',
+            message: '搜索 GitLab 项目（输入项目名称关键词）:',
+            validate: (input) => input ? true : '请输入搜索关键词',
+          },
+        ]);
+
+        spinner.start(`正在搜索项目 "${searchKeyword}"...`);
+        const projectsResult = await gitlabClient.listProjects(1, 100);
+
+        if (!projectsResult.success || !projectsResult.data) {
+          spinner.fail(chalk.red(`获取项目列表失败: ${projectsResult.error}`));
+          process.exit(1);
+        }
+
+        // 根据关键词过滤项目
+        const filteredProjects = projectsResult.data.filter(p =>
+          p.path_with_namespace.toLowerCase().includes(searchKeyword.toLowerCase()) ||
+          p.name.toLowerCase().includes(searchKeyword.toLowerCase())
+        );
+
+        spinner.stop();
+
+        if (filteredProjects.length === 0) {
+          console.log(chalk.yellow(`\n未找到包含 "${searchKeyword}" 的项目，请重新搜索\n`));
+          continue;
+        }
+
+        console.log(chalk.green(`\n找到 ${filteredProjects.length} 个匹配的项目:\n`));
+
+        const { projectChoice } = await inquirer.prompt([
+          {
+            type: 'list',
+            name: 'projectChoice',
+            message: '选择要更新环境变量的项目:',
+            choices: [
+              ...filteredProjects.map((p) => ({
+                name: `${p.path_with_namespace} (${p.default_branch})`,
+                value: p.id,
+              })),
+              { name: '🔍 重新搜索', value: 'search_again' },
+            ],
+          },
+        ]);
+
+        if (projectChoice === 'search_again') {
+          continue;
+        }
+
+        selectedProject = projectChoice;
+      }
+
+      // 5. 准备要更新的变量
+      const variables: Array<{ key: string; value: string; protected: boolean; masked: boolean; variable_type: 'file'; description: string }> = [];
+
+      if (devEnvContent) {
+        variables.push({
+          key: 'DEV_ENV_FILE',
+          value: devEnvContent,
+          protected: false,
+          masked: false,
+          variable_type: 'file',
+          description: '开发环境 .env 文件',
+        });
+      }
+
+      if (prodEnvContent) {
+        variables.push({
+          key: 'PROD_ENV_FILE',
+          value: prodEnvContent,
+          protected: false,
+          masked: false,
+          variable_type: 'file',
+          description: '生产环境 .env 文件',
+        });
+      }
+
+      // 6. 显示将要更新的变量
+      console.log(chalk.cyan('\n📋 将要更新的变量:\n'));
+      variables.forEach(v => {
+        const lines = v.value.split('\n').length;
+        console.log(chalk.white(`  - ${v.key}: ${lines} 行`));
+      });
+
+      // 7. 确认更新
+      const { confirm } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'confirm',
+          message: '确认更新这些环境变量？',
+          default: true,
+        },
+      ]);
+
+      if (!confirm) {
+        console.log(chalk.yellow('\n⚠️  已取消更新\n'));
+        return;
+      }
+
+      // 8. 上传变量
+      spinner.start('正在更新环境变量到 GitLab...');
+      const uploadResult = await gitlabClient.batchUpsertVariables(selectedProject, variables);
+
+      if (uploadResult.success.length > 0) {
+        spinner.succeed(chalk.green(`成功更新 ${uploadResult.success.length} 个变量`));
+        uploadResult.success.forEach((key) => {
+          console.log(chalk.green(`  ✓ ${key}`));
+        });
+      }
+
+      if (uploadResult.failed.length > 0) {
+        console.log(chalk.red(`\n失败 ${uploadResult.failed.length} 个变量:`));
+        uploadResult.failed.forEach(({ key, error }) => {
+          console.log(chalk.red(`  ✗ ${key}: ${error}`));
+        });
+      }
+
+      console.log(chalk.bold.green('\n✨ 环境变量更新完成！\n'));
+    } catch (error) {
+      console.error(chalk.red('\n❌ 发生错误:'), error);
+      process.exit(1);
+    }
+  });
+
+program
   .command('update')
   .description('更新 cicd-setup 到最新版本')
   .action(async () => {

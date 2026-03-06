@@ -1,6 +1,6 @@
 {
   "name": "clouddreamai-cicd-setup",
-  "version": "1.9.0",
+  "version": "1.11.0",
   "description": "CloudDreamAI GitLab CI/CD 自动配置工具 - 支持 NestJS/Vue/React 项目的一键 CI/CD 配置",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
